@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NANO-PHONONICS Acoustic Triangulation</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:        #080c14;
+    --panel:     #0d1422;
+    --border:    #1a2840;
+    --text:      #7b9cc4;
+    --highlight: #38bdf8;
+    --success:   #4ade80;
+    --dim:       #2a4060;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Share Tech Mono', monospace;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  header {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 8px 20px;
+    border-bottom: 1px solid var(--border);
+    background: linear-gradient(90deg, var(--bg), #0d1628, var(--bg));
+  }
+  header h1 {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 3px;
+    color: var(--highlight);
+    text-shadow: 0 0 20px rgba(56,189,248,0.6);
+  }
+  .dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--success);
+    box-shadow: 0 0 8px var(--success);
+    animation: blink 1.4s ease-in-out infinite;
+  }
+  @keyframes blink { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.3;transform:scale(.6)} }
+
+  #app {
+    flex: 1;
+    display: flex;
+    gap: 8px;
+    padding: 8px;
+    min-height: 0;
+  }
+
+  #left {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    min-width: 0;
+  }
+  #canvasWrap {
+    flex: 1;
+    position: relative;
+    border: 1px solid var(--border);
+    overflow: hidden;
+    min-height: 0;
+  }
+  canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    cursor: crosshair;
+  }
+  .axis-label {
+    flex-shrink: 0;
+    text-align: center;
+    font-size: 9.5px;
+    color: var(--dim);
+    letter-spacing: 1px;
+  }
+  #hint {
+    flex-shrink: 0;
+    text-align: center;
+    font-size: 9px;
+    color: #1e3550;
+    letter-spacing: 1.5px;
+    padding-bottom: 2px;
+  }
+
+  #sidebar {
+    width: 280px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    overflow: hidden;
+  }
+
+  .panel {
+    flex: 1;
+    min-height: 0;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-left: 2px solid var(--highlight);
+    padding: 6px 10px;
+    border-radius: 2px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .panel-title {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 7px;
+    letter-spacing: 2px;
+    color: var(--highlight);
+    margin-bottom: 5px;
+    padding-bottom: 4px;
+    flex-shrink: 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .panel-body {
+    white-space: pre;
+    font-size: 9.5px;
+    color: var(--text);
+    line-height: 1.55;
+    font-family: 'Share Tech Mono', monospace;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .panel.decoder { border-left-color: var(--success); flex: 0.7; }
+  .panel.decoder .panel-title { color: var(--success); }
+  .panel.decoder .panel-body  { color: var(--success); font-size: 10.5px; line-height: 1.7; }
+
+  .panel.theory { border-left-color: var(--dim); flex: 0.85; }
+  .panel.theory .panel-title { color: var(--dim); }
+  .panel.theory .panel-body  { color: #3a5a7a; font-size: 9px; line-height: 1.6; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="dot"></div>
+  <h1>⬡ NANO-PHONONICS · ACOUSTIC TRIANGULATION (TDOA) ⬡</h1>
+  <div class="dot"></div>
+</header>
+
+<div id="app">
+  <div id="left">
+    <div id="canvasWrap"><canvas id="sim"></canvas></div>
+    <div class="axis-label">Plate X Coordinates (m)</div>
+    <div id="hint">▸ CLICK A KEY ON THE PLATE OR PRESS YOUR KEYBOARD TO SIMULATE A KEYSTROKE</div>
+  </div>
+
+  <div id="sidebar">
+    <div class="panel">
+      <div class="panel-title">TRACKING TELEMETRY</div>
+      <pre class="panel-body" id="tel">Loading…</pre>
+    </div>
+    <div class="panel decoder">
+      <div class="panel-title">DECODED OUTPUT</div>
+      <pre class="panel-body" id="dec">Loading…</pre>
+    </div>
+    <div class="panel theory">
+      <div class="panel-title">MATHEMATICAL THEORY</div>
+      <pre class="panel-body">Δd_i = v_g · Δt_i
+
+E(x,y) = Σᵢ (
+  ‖Sᵢ − p‖ / v_g
+  − Δt_meas,i
+)²
+
+TDOA : Time Difference of Arrival
+v_g  : Plate wave group velocity
+Sᵢ   : Sensor i position vector
+p    : Candidate source location
+E    : Least-squares error surface</pre>
+    </div>
+  </div>
+</div>
+
+<script>
+const VG        = 600.0;
+const NOISE_STD = 4e-6;
+const GRID_RES  = 220;
+
+let _s = 42;
+function _rng() { _s ^= _s<<13; _s ^= _s>>>17; _s ^= _s<<5; return ((_s>>>0)/4294967296); }
+function randN() { const u=Math.max(_rng(),1e-12),v=_rng(); return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v); }
+
+const PITCH=0.01905, KEY_W=0.017, KEY_H=0.017;
+const ROWS=["QWERTYUIOP","ASDFGHJKL","ZXCVBNM"];
+const ROFF=[0.0,0.5*PITCH,1.0*PITCH];
+const keyPos={}, allKeys=[];
+ROWS.forEach((row,r)=>{
+  const y=(ROWS.length-1-r)*PITCH;
+  [...row].forEach((ch,i)=>{ const x=ROFF[r]+i*PITCH; keyPos[ch]=[x,y]; allKeys.push({ch,x,y}); });
+});
+const allX=Object.values(keyPos).map(p=>p[0]);
+const allY=Object.values(keyPos).map(p=>p[1]);
+
+// Add some padding around keyboard for sensor placement
+const XMIN=Math.min(...allX)-0.045, XMAX=Math.max(...allX)+0.045;
+const YMIN=Math.min(...allY)-0.045, YMAX=Math.max(...allY)+0.050;
+const PW=XMAX-XMIN, PH=YMAX-YMIN;
+
+// Sensors placed at true corners with clear margin
+const SENSORS=[
+  [XMIN+0.005, YMIN+0.005],  // S1 bottom-left
+  [XMAX-0.005, YMIN+0.005],  // S2 bottom-right
+  [XMIN+0.005, YMAX-0.005],  // S3 top-left
+  [XMAX-0.005, YMAX-0.005],  // S4 top-right
+];
+const SENSOR_LABELS = ["S1","S2","S3","S4"];
+// Label offsets: push labels outward to clear corners
+const SENSOR_LABEL_OFFSET = [
+  [-0.020, -0.020],  // S1: bottom-left
+  [+0.020, -0.020],  // S2: bottom-right
+  [-0.020, +0.020],  // S3: top-left
+  [+0.020, +0.020],  // S4: top-right
+];
+
+const canvas=document.getElementById("sim"), ctx=canvas.getContext("2d");
+const CW=900, CH=Math.round(CW*PH/PW);
+canvas.width=CW; canvas.height=CH;
+
+function toPixel(mx,my){ return [((mx-XMIN)/PW)*CW, CH-((my-YMIN)/PH)*CH]; }
+function toMeter(px,py){ return [XMIN+(px/CW)*PW, YMIN+((CH-py)/CH)*PH]; }
+
+// Inferno-R colormap (reversed: low error = bright/hot)
+const STOPS=[[0,[252,255,164]],[.15,[249,201,82]],[.30,[251,135,97]],[.50,[192,58,118]],[.70,[120,28,130]],[.85,[58,13,105]],[1,[0,0,4]]];
+function infraR(t){
+  t=Math.max(0,Math.min(1,t));
+  for(let i=1;i<STOPS.length;i++){
+    const [t0,c0]=STOPS[i-1],[t1,c1]=STOPS[i];
+    if(t<=t1){const f=(t-t0)/(t1-t0);return[c0[0]+f*(c1[0]-c0[0])|0,c0[1]+f*(c1[1]-c0[1])|0,c0[2]+f*(c1[2]-c0[2])|0];}
+  }
+  return STOPS[STOPS.length-1][1];
+}
+
+let estSrc=[...keyPos["G"]], estKey="G", tdoa=[0,0,0,0], bestErr=0, keyDist=0, frame=0, hmCanvas=null;
+
+function linspace(a,b,n){const r=new Float64Array(n);for(let i=0;i<n;i++)r[i]=a+(b-a)*i/(n-1);return r;}
+function computeField(tdoaMeas){
+  const xs=linspace(XMIN,XMAX,GRID_RES), ys=linspace(YMIN,YMAX,GRID_RES);
+  const err=new Float64Array(GRID_RES*GRID_RES);
+  let minE=Infinity,minXi=0,minYi=0;
+  for(let yi=0;yi<GRID_RES;yi++){
+    const py=ys[yi];
+    for(let xi=0;xi<GRID_RES;xi++){
+      const px=xs[xi];
+      const t=SENSORS.map(s=>{const dx=px-s[0],dy=py-s[1];return Math.sqrt(dx*dx+dy*dy)/VG;});
+      let e=0; for(let k=0;k<4;k++){const d=(t[k]-t[0])-tdoaMeas[k];e+=d*d;} e+=1e-15;
+      err[yi*GRID_RES+xi]=e;
+      if(e<minE){minE=e;minXi=xi;minYi=yi;}
+    }
+  }
+  return{bestP:[xs[minXi],ys[minYi]],bestErr:minE,errors:err};
+}
+function nearestKey(p){
+  let bk=null,bd=Infinity;
+  for(const[ch,pos]of Object.entries(keyPos)){const dx=p[0]-pos[0],dy=p[1]-pos[1],d=Math.sqrt(dx*dx+dy*dy);if(d<bd){bd=d;bk=ch;}}
+  return{key:bk,dist:bd};
+}
+
+function buildHeatmap(errors){
+  let lmin=Infinity,lmax=-Infinity;
+  const le=new Float64Array(errors.length);
+  for(let i=0;i<errors.length;i++){le[i]=Math.log(errors[i]);if(le[i]<lmin)lmin=le[i];if(le[i]>lmax)lmax=le[i];}
+  const rng=lmax-lmin||1;
+  const oc=document.createElement("canvas"); oc.width=GRID_RES; oc.height=GRID_RES;
+  const img=oc.getContext("2d").createImageData(GRID_RES,GRID_RES); const d=img.data;
+  for(let yi=0;yi<GRID_RES;yi++)for(let xi=0;xi<GRID_RES;xi++){
+    const src=yi*GRID_RES+xi, dst=(GRID_RES-1-yi)*GRID_RES+xi;
+    const[r,g,b]=infraR((le[src]-lmin)/rng);
+    d[dst*4]=r;d[dst*4+1]=g;d[dst*4+2]=b;d[dst*4+3]=168;
+  }
+  oc.getContext("2d").putImageData(img,0,0);
+  return oc;
+}
+
+function simulate(key){
+  if(!keyPos[key])return;
+  const src=keyPos[key];
+  const tTrue=SENSORS.map(s=>{const dx=src[0]-s[0],dy=src[1]-s[1];return Math.sqrt(dx*dx+dy*dy)/VG;});
+  const arr=tTrue.map(t=>t+randN()*NOISE_STD);
+  tdoa=arr.map(t=>t-arr[0]);
+  const res=computeField(tdoa);
+  estSrc=res.bestP; bestErr=res.bestErr;
+  const nk=nearestKey(estSrc); estKey=nk.key; keyDist=nk.dist;
+  hmCanvas=buildHeatmap(res.errors);
+  updateSidebar();
+  frame=0;
+}
+
+function sgn(v){return v>=0?"+":"";}
+function updateSidebar(){
+  document.getElementById("tel").textContent=
+`V-Prop Constant  : ${VG} m/s
+Sensor Noise Std : ${(NOISE_STD*1e6).toFixed(1)} µs
+
+Intercepted TDOA wrt S1:
+  S1 :  0.000 µs  (reference)
+  S2 : ${sgn(tdoa[1])}${(tdoa[1]*1e6).toFixed(3)} µs
+  S3 : ${sgn(tdoa[2])}${(tdoa[2]*1e6).toFixed(3)} µs
+  S4 : ${sgn(tdoa[3])}${(tdoa[3]*1e6).toFixed(3)} µs
+
+────────────────────────────
+Grid Error Min   : ${bestErr.toExponential(2)}
+Est. Coordinates :
+  x = ${estSrc[0].toFixed(5)} m
+  y = ${estSrc[1].toFixed(5)} m
+
+Nearest Key Node : ${estKey}
+Key Distance     : ${(keyDist*1000).toFixed(2)} mm`;
+
+  const code=estKey.charCodeAt(0);
+  document.getElementById("dec").textContent=
+`KEY NODE    : '${estKey}'
+
+RECON HEX   :  0x${code.toString(16).toUpperCase().padStart(2,"0")}
+
+RECON BINARY:  0b${code.toString(2).padStart(8,"0")}`;
+}
+
+// ── Wave config — slow, wide rings matching reference image ──
+const WAVE_RINGS   = 6;      // number of concentric rings visible
+const WAVE_PERIOD  = 180;    // frames per full cycle (slow)
+const WAVE_STEP    = 0.0006; // meters expanded per frame (very slow)
+const WAVE_SPACING = 0.012;  // meters between rings (wide spacing)
+
+function draw(){
+  ctx.clearRect(0,0,CW,CH);
+  ctx.fillStyle="#050912"; ctx.fillRect(0,0,CW,CH);
+
+  // Heatmap
+  if(hmCanvas) ctx.drawImage(hmCanvas,0,0,CW,CH);
+
+  // Grid
+  ctx.strokeStyle="rgba(56,189,248,0.06)"; ctx.lineWidth=0.5;
+  for(let i=0;i<=12;i++){
+    const xp=i/12*CW,yp=i/12*CH;
+    ctx.beginPath();ctx.moveTo(xp,0);ctx.lineTo(xp,CH);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(0,yp);ctx.lineTo(CW,yp);ctx.stroke();
+  }
+
+  // ── Keys ────────────────────────────────────────────────────
+  for(const{ch,x,y}of allKeys){
+    const[px1,py1]=toPixel(x-KEY_W/2,y+KEY_H/2);
+    const[px2,py2]=toPixel(x+KEY_W/2,y-KEY_H/2);
+    const pw=px2-px1,ph=py2-py1;
+    const active=ch===estKey;
+
+    ctx.fillStyle   = active?"rgba(74,222,128,0.28)":"rgba(8,18,42,0.88)";
+    ctx.strokeStyle = active?"#4ade80":"rgba(56,189,248,0.50)";
+    ctx.lineWidth   = active?2.5:1.2;
+    ctx.fillRect(px1,py1,pw,ph);
+    ctx.strokeRect(px1,py1,pw,ph);
+
+    // Bevel highlight
+    ctx.strokeStyle=active?"rgba(255,255,255,0.18)":"rgba(80,140,200,0.10)";
+    ctx.lineWidth=1;
+    ctx.strokeRect(px1+1.5,py1+1.5,pw-3,ph-3);
+
+    const[cx,cy]=toPixel(x,y);
+    const fontSize=Math.round(pw*0.50);
+    ctx.font=`bold ${fontSize}px 'Share Tech Mono',monospace`;
+    ctx.textAlign="center"; ctx.textBaseline="middle";
+    if(active){
+      ctx.shadowColor="#4ade80"; ctx.shadowBlur=12;
+      ctx.fillStyle="#ffffff";
+    } else {
+      ctx.shadowBlur=0;
+      ctx.fillStyle="#c8dff4";
+    }
+    ctx.fillText(ch,cx,cy);
+    ctx.shadowBlur=0;
+  }
+
+  // ── Acoustic wave rings (slow, like reference image) ────────
+  const[ex,ey]=toPixel(estSrc[0],estSrc[1]);
+  const phase=(frame%WAVE_PERIOD)*WAVE_STEP;
+  const maxR=WAVE_PERIOD*WAVE_STEP + WAVE_RINGS*WAVE_SPACING;
+
+  for(let i=0;i<WAVE_RINGS;i++){
+    const mR=phase + i*WAVE_SPACING;
+    if(mR<0) continue;
+    const rPx=(mR/PW)*CW;
+    const fade=Math.pow(Math.max(0, 1 - mR/maxR), 0.7); // smooth fadeout
+    const alpha=(0.65*fade).toFixed(3);
+    ctx.strokeStyle=`rgba(180,220,255,${alpha})`;
+    ctx.lineWidth=2;
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.arc(ex,ey,rPx,0,Math.PI*2);
+    ctx.stroke();
+  }
+  ctx.setLineDash([]);
+
+  // ── Sensors — large, prominent, corner-mounted ───────────────
+  for(let i=0;i<SENSORS.length;i++){
+    const[sx,sy]=toPixel(SENSORS[i][0],SENSORS[i][1]);
+
+    // Outer glow ring
+    const glow=ctx.createRadialGradient(sx,sy,3,sx,sy,22);
+    glow.addColorStop(0,"rgba(56,189,248,0.50)");
+    glow.addColorStop(0.5,"rgba(56,189,248,0.15)");
+    glow.addColorStop(1,"rgba(56,189,248,0)");
+    ctx.fillStyle=glow; ctx.beginPath(); ctx.arc(sx,sy,22,0,Math.PI*2); ctx.fill();
+
+    // Outer ring
+    ctx.strokeStyle="#38bdf8"; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.arc(sx,sy,10,0,Math.PI*2); ctx.stroke();
+
+    // Inner ring
+    ctx.strokeStyle="rgba(56,189,248,0.5)"; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.arc(sx,sy,14,0,Math.PI*2); ctx.stroke();
+
+    // Core dot
+    ctx.fillStyle="#ffffff";
+    ctx.beginPath(); ctx.arc(sx,sy,5,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle="#38bdf8";
+    ctx.beginPath(); ctx.arc(sx,sy,3,0,Math.PI*2); ctx.fill();
+
+    // Sensor label — pushed outward to corner, no overlap
+    const[lox,loy]=SENSOR_LABEL_OFFSET[i];
+    const[lx,ly]=toPixel(SENSORS[i][0]+lox, SENSORS[i][1]+loy);
+
+    // Label background pill
+    const label=SENSOR_LABELS[i];
+    ctx.font="bold 13px 'Orbitron',sans-serif";
+    const tw=ctx.measureText(label).width;
+    const pad=5, rh=16, rx=lx-tw/2-pad, ry=ly-rh/2;
+    ctx.fillStyle="rgba(5,14,30,0.85)";
+    ctx.beginPath();
+    ctx.roundRect(rx, ry, tw+pad*2, rh, 3);
+    ctx.fill();
+    ctx.strokeStyle="rgba(56,189,248,0.6)"; ctx.lineWidth=1;
+    ctx.stroke();
+
+    // Label text
+    ctx.fillStyle="#38bdf8";
+    ctx.shadowColor="rgba(56,189,248,0.8)"; ctx.shadowBlur=8;
+    ctx.textAlign="center"; ctx.textBaseline="middle";
+    ctx.fillText(label,lx,ly);
+    ctx.shadowBlur=0;
+
+    // Thin line connecting dot to label
+    ctx.strokeStyle="rgba(56,189,248,0.30)"; ctx.lineWidth=1;
+    ctx.setLineDash([3,3]);
+    ctx.beginPath(); ctx.moveTo(sx,sy); ctx.lineTo(lx,ly); ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // ── Crosshair at estimated source ───────────────────────────
+  ctx.shadowColor="#4ade80"; ctx.shadowBlur=16;
+  ctx.strokeStyle="#4ade80"; ctx.lineWidth=2.5;
+  const CS=16;
+  ctx.beginPath();
+  ctx.moveTo(ex-CS,ey); ctx.lineTo(ex+CS,ey);
+  ctx.moveTo(ex,ey-CS); ctx.lineTo(ex,ey+CS);
+  ctx.stroke();
+  ctx.fillStyle="#4ade80";
+  ctx.beginPath(); ctx.arc(ex,ey,4,0,Math.PI*2); ctx.fill();
+  ctx.shadowBlur=0;
+}
+
+function loop(){ frame++; draw(); requestAnimationFrame(loop); }
+
+canvas.addEventListener("click",e=>{
+  const r=canvas.getBoundingClientRect();
+  const cx=(e.clientX-r.left)*(CW/r.width),cy=(e.clientY-r.top)*(CH/r.height);
+  const[mx,my]=toMeter(cx,cy);
+  for(const{ch,x,y}of allKeys)
+    if(mx>=x-KEY_W/2&&mx<=x+KEY_W/2&&my>=y-KEY_H/2&&my<=y+KEY_H/2){simulate(ch);break;}
+});
+document.addEventListener("keydown",e=>{const k=e.key.toUpperCase();if(k.length===1&&keyPos[k])simulate(k);});
+
+simulate("G");
+loop();
+</script>
+</body>
+</html>
